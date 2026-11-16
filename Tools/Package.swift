@@ -4,7 +4,7 @@ import PackageDescription
 
 // Build-time tools. They replay SAN with FischerCore, which the runtime library does not need.
 //   swift run -c release --package-path Tools generate-catalog
-//   swift run -c release --package-path Tools measure-catalog ~/Downloads/LumbrasGigabase_OTB_2025.pgn
+//   swift run -c release --package-path Tools measure-catalog path/to/base.pgn [report.md]
 let package = Package(
     name: "ChessOpeningsCatalogTools",
     platforms: [
@@ -23,7 +23,12 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "generate-catalog", dependencies: ["CatalogTooling"]),
-        .executableTarget(name: "measure-catalog", dependencies: ["CatalogTooling"]),
+        .executableTarget(
+            name: "bench-catalog",
+            dependencies: [.product(name: "ChessOpeningsCatalog", package: "ChessOpeningsCatalog")]
+        ),
+        // Top-level measurement script: Swift 5 mode keeps it free of main-actor plumbing.
+        .executableTarget(name: "measure-catalog", dependencies: ["CatalogTooling"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -10,15 +10,15 @@
 //    8   entry count N           UInt32
 //    12  name count M            UInt32
 //    16  name bytes B            UInt32
-//    20  line position count L   UInt32
+//    20  transposition count L   UInt32
 //    24  keys                    N × UInt64 (ascending)
 //        eco                     N × UInt16 (A00 = 0 … E99 = 499)
 //        name index              N × UInt16
 //        plies                   N × UInt8
 //        name offsets            (M + 1) × UInt32 into the name bytes
 //        name bytes              B bytes of UTF-8
-//        line position keys      L × UInt64 (ascending)
-//        line position targets   L × UInt16 (entry index)
+//        transposition keys      L × UInt64 (ascending)
+//        transposition targets   L × UInt16 (entry index)
 //
 
 import Foundation
@@ -37,15 +37,15 @@ public enum CatalogFile {
         case unknownTarget(UInt64)
     }
 
-    /// The decoded contents: named entries in key order and line positions (position key → named key).
+    /// The decoded contents: named entries in key order and transpositions (position key → named key).
     public struct Contents: Sendable {
         public var openings: [Opening]
-        public var linePositions: [UInt64: UInt64]
+        public var transpositions: [UInt64: UInt64]
     }
 
-    /// Writes `openings` (any order) and the line positions (position key → key of a named entry) in the binary
+    /// Writes `openings` (any order) and the transpositions (position key → key of a named entry) in the binary
     /// format. Names are stored once each.
-    public static func encode(_ openings: [Opening], linePositions: [UInt64: UInt64] = [:]) throws -> Data {
+    public static func encode(_ openings: [Opening], transpositions: [UInt64: UInt64] = [:]) throws -> Data {
         let sorted = openings.sorted { $0.key < $1.key }
         guard sorted.count < Int(UInt16.max) else { throw Error.tooManyEntries }
         var names: [String] = []
@@ -69,7 +69,7 @@ public enum CatalogFile {
         append(UInt32(sorted.count), to: &data)
         append(UInt32(names.count), to: &data)
         append(UInt32(nameBytes.count), to: &data)
-        append(UInt32(linePositions.count), to: &data)
+        append(UInt32(transpositions.count), to: &data)
         for opening in sorted { append(opening.key, to: &data) }
         for opening in sorted {
             guard let eco = Opening.ecoIndex(opening.eco) else { throw Error.badEntry(opening.id) }
@@ -84,7 +84,7 @@ public enum CatalogFile {
         data.append(contentsOf: nameBytes)
         var indexByKey: [UInt64: Int] = [:]
         for (index, opening) in sorted.enumerated() { indexByKey[opening.key] = index }
-        let lines = linePositions.sorted { $0.key < $1.key }
+        let lines = transpositions.sorted { $0.key < $1.key }
         for line in lines {
             guard indexByKey[line.key] == nil else { throw Error.duplicateKey(line.key) }
             append(line.key, to: &data)
@@ -146,7 +146,7 @@ public enum CatalogFile {
                 guard target < openings.count else { throw Error.badEntry(index) }
                 lines[key] = openings[target].key
             }
-            return Contents(openings: openings, linePositions: lines)
+            return Contents(openings: openings, transpositions: lines)
         }
     }
 

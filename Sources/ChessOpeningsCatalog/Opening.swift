@@ -67,8 +67,7 @@ public struct OpeningMatch: Sendable, Hashable {
     public let opening: Opening
     /// Index in the key sequence passed to ``OpeningCatalog/classifyMatch(keys:limit:matching:)``.
     public let index: Int
-    /// True when the matched position is the named one itself, false for a position on a catalog line that
-    /// points at this opening.
+    /// True when the matched position is the named one itself, false for a transposition that points at it.
     public let isNamedPosition: Bool
 
     public init(opening: Opening, index: Int, isNamedPosition: Bool) {

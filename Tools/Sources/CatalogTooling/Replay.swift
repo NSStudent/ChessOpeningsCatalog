@@ -17,6 +17,8 @@ public struct ReplayFailure: Error, CustomStringConvertible {
 }
 
 public enum Replay {
+    static let startBoard = PolyglotBoard.start
+
     /// Keys of the positions after each move (the starting position is not included), up to `limit` plies.
     /// Returns the keys played before the first move that cannot be resolved, plus the failure.
     public static func keys(
@@ -25,11 +27,17 @@ public enum Replay {
         crossCheck: Bool = false
     ) -> (keys: [UInt64], failure: ReplayFailure?) {
         var game = Game()
-        var board = PolyglotBoard.start
+        var board = startBoard
         var keys: [UInt64] = []
         keys.reserveCapacity(min(moves.count, limit))
         for (ply, text) in moves.prefix(limit).enumerated() {
-            switch game.resolveResult(san: String(text)) {
+            // Parse without FischerCore's lenient normalization (Foundation string replacements, ~60 µs a move);
+            // Movetext already strips annotation glyphs, and castling with zeros is mapped here.
+            let san = text.hasPrefix("0-0") ? Substring(text.replacingOccurrences(of: "0", with: "O")) : text
+            guard let parsed = try? SANMove(san: String(san), options: .strict) else {
+                return (keys, ReplayFailure(ply: ply, san: String(text), reason: "unreadable SAN"))
+            }
+            switch game.resolveResult(parsed) {
             case let .success(resolved):
                 do {
                     try game.execute(resolvedMove: resolved, considerHalfmoves: false)
@@ -66,37 +74,31 @@ public enum Replay {
 
 public enum Movetext {
     /// SAN tokens of a PGN movetext: move numbers, results, NAGs, comments, variations and annotation glyphs removed.
-    /// Stops after `limit` moves.
+    /// Stops after `limit` moves. Works on UTF-8 bytes: every delimiter is ASCII.
     public static func sanMoves(_ text: Substring, limit: Int = .max) -> [Substring] {
         var moves: [Substring] = []
+        let utf8 = text.utf8
         var depth = 0          // variation nesting
-        var inBrace = false
-        var index = text.startIndex
-        while index < text.endIndex, moves.count < limit {
-            let character = text[index]
-            if inBrace {
-                if character == "}" { inBrace = false }
-                index = text.index(after: index)
-                continue
-            }
-            switch character {
-            case "{":
-                inBrace = true
-                index = text.index(after: index)
-            case ";":
-                // Comment to end of line.
-                while index < text.endIndex, text[index] != "\n" { index = text.index(after: index) }
-            case "(":
+        var index = utf8.startIndex
+        while index < utf8.endIndex, moves.count < limit {
+            let byte = utf8[index]
+            switch byte {
+            case UInt8(ascii: "{"):
+                while index < utf8.endIndex, utf8[index] != UInt8(ascii: "}") { utf8.formIndex(after: &index) }
+                if index < utf8.endIndex { utf8.formIndex(after: &index) }
+            case UInt8(ascii: ";"):
+                while index < utf8.endIndex, utf8[index] != UInt8(ascii: "\n") { utf8.formIndex(after: &index) }
+            case UInt8(ascii: "("):
                 depth += 1
-                index = text.index(after: index)
-            case ")":
+                utf8.formIndex(after: &index)
+            case UInt8(ascii: ")"):
                 depth = max(0, depth - 1)
-                index = text.index(after: index)
-            case " ", "\n", "\r", "\t":
-                index = text.index(after: index)
+                utf8.formIndex(after: &index)
+            case UInt8(ascii: " "), UInt8(ascii: "\n"), UInt8(ascii: "\r"), UInt8(ascii: "\t"):
+                utf8.formIndex(after: &index)
             default:
                 var end = index
-                while end < text.endIndex, !" \n\r\t{}();".contains(text[end]) { end = text.index(after: end) }
+                while end < utf8.endIndex, !isDelimiter(utf8[end]) { utf8.formIndex(after: &end) }
                 let token = text[index..<end]
                 index = end
                 guard depth == 0 else { continue }
@@ -106,17 +108,31 @@ public enum Movetext {
         return moves
     }
 
-    /// The SAN in a token such as `12.Nf3`, `e4!?` or `Qxe7+`; nil for numbers, results and NAGs.
+    @inline(__always)
+    static func isDelimiter(_ byte: UInt8) -> Bool {
+        switch byte {
+        case UInt8(ascii: " "), UInt8(ascii: "\n"), UInt8(ascii: "\r"), UInt8(ascii: "\t"),
+             UInt8(ascii: "{"), UInt8(ascii: "}"), UInt8(ascii: "("), UInt8(ascii: ")"), UInt8(ascii: ";"):
+            true
+        default:
+            false
+        }
+    }
+
+    /// The SAN in a token such as `12.Nf3`, `e4!?`, `0-0` or `Qxe7+`; nil for numbers, results and NAGs.
     static func sanToken(_ token: Substring) -> Substring? {
         var token = token
-        if token.first == "$" { return nil }
-        if token == "1-0" || token == "0-1" || token == "1/2-1/2" || token == "*" { return nil }
-        // Strip a leading move number: "12." or "12..." possibly glued to the move.
-        if let first = token.first, first.isNumber {
-            guard let dot = token.lastIndex(of: ".") else { return nil }
-            token = token[token.index(after: dot)...]
+        guard let first = token.utf8.first else { return nil }
+        if first == UInt8(ascii: "$") || first == UInt8(ascii: "*") { return nil }
+        if token == "1-0" || token == "0-1" || token == "1/2-1/2" { return nil }
+        // A leading move number: "12." or "12..." possibly glued to the move. "0-0" is castling, not a number.
+        if (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(first), !token.hasPrefix("0-0") {
+            guard let dot = token.utf8.lastIndex(of: UInt8(ascii: ".")) else { return nil }
+            token = token[token.utf8.index(after: dot)...]
         }
-        while let last = token.last, "!?".contains(last) { token = token.dropLast() }
+        while let last = token.utf8.last, last == UInt8(ascii: "!") || last == UInt8(ascii: "?") {
+            token = token.dropLast()
+        }
         if token.isEmpty || token == "--" || token == "Z0" { return nil }
         return token
     }

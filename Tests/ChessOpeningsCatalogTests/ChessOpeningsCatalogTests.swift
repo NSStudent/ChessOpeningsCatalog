@@ -68,7 +68,7 @@ struct OpeningCatalogTests {
     @Test("the bundled catalog loads")
     func loads() {
         #expect(catalog.count > 3_000)
-        #expect(catalog.linePositions.count > 3_000)
+        #expect(catalog.transpositions.count > 100)
         #expect(catalog.openings.map(\.key) == catalog.openings.map(\.key).sorted())
     }
 
@@ -119,13 +119,30 @@ struct OpeningCatalogTests {
         #expect(named.opening.name == "Sicilian Defense: Najdorf Variation, English Attack")
         #expect(named.index == 10)
         #expect(named.isNamedPosition)
-        // With line positions the later moves still belong to the English Attack lines.
-        #expect(catalog.classify(keys: game)?.family == "Sicilian Defense")
+        // Transpositions do not change a game that follows the catalog's own move order.
+        #expect(catalog.classify(keys: game) == named.opening)
         // A shorter window stops at shallower names.
         #expect(catalog.classify(keys: game, limit: 9, matching: .namedPositions)?.name == "Sicilian Defense: Najdorf Variation")
         #expect(catalog.classify(keys: game, limit: 4)?.eco == "B50")
         #expect(catalog.classify(keys: game, limit: 1)?.eco == "B20")
         #expect(catalog.classify(keys: game, limit: 0)?.name == "King's Pawn Game")
+    }
+
+    @Test("a transposition does not replace a more precise opening of the same family")
+    func transpositionKeepsPreciseMatch() throws {
+        // 1.d4 d5 2.c4 e6 3.Nc3 Nf6 4.Nf3 (Three Knights, D37) then moves through Queen's Gambit Declined positions.
+        let game = keys("d2d4 d7d5 c2c4 e7e6 b1c3 g8f6 g1f3 f8e7 c1f4 e8g8")
+        let named = try #require(catalog.classify(keys: game, matching: .namedPositions))
+        #expect(catalog.classify(keys: game) == named)
+        #expect(named.family == "Queen's Gambit Declined")
+    }
+
+    @Test("every transposition points at a named opening and is not named itself")
+    func transpositionTable() {
+        for link in catalog.transpositions {
+            #expect(catalog.lookup(key: link.key, matching: .namedPositions) == nil)
+            #expect(catalog.lookup(key: link.key) == catalog.openings[link.opening])
+        }
     }
 
     @Test("the starting position first does not change the result")
@@ -177,15 +194,15 @@ struct CatalogFileTests {
             Opening(id: 1, key: 7, eco: "A00", name: "Amar Opening", plies: 1),
             Opening(id: 2, key: 9, eco: "A00", name: "Amar Opening", plies: 255),
         ]
-        let contents = try CatalogFile.decode(CatalogFile.encode(openings, linePositions: [100: 42, 101: 7]))
+        let contents = try CatalogFile.decode(CatalogFile.encode(openings, transpositions: [100: 42, 101: 7]))
         let decoded = contents.openings
-        #expect(contents.linePositions == [100: 42, 101: 7])
-        let catalog = try OpeningCatalog(openings: decoded, linePositions: contents.linePositions)
+        #expect(contents.transpositions == [100: 42, 101: 7])
+        let catalog = try OpeningCatalog(openings: decoded, transpositions: contents.transpositions)
         #expect(catalog.lookup(key: 100)?.key == 42)
         #expect(catalog.lookup(key: 100, matching: .namedPositions) == nil)
         #expect(catalog.classifyMatch(keys: [7, 100])?.isNamedPosition == false)
         #expect(catalog.classifyMatch(keys: [7, 100], matching: .namedPositions)?.opening.key == 7)
-        #expect(throws: CatalogFile.Error.unknownTarget(5)) { try CatalogFile.encode(openings, linePositions: [100: 5]) }
+        #expect(throws: CatalogFile.Error.unknownTarget(5)) { try CatalogFile.encode(openings, transpositions: [100: 5]) }
         #expect(decoded.map(\.key) == [7, 9, 42])
         #expect(decoded.map(\.eco) == ["A00", "A00", "E99"])
         #expect(decoded.map(\.plies) == [1, 255, 18])
