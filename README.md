@@ -10,7 +10,7 @@ Classifies chess games by opening (ECO code and name) from the **Polyglot Zobris
 ## Installation
 
 ```swift
-.package(url: "https://github.com/NSStudent/ChessOpeningsCatalog.git", branch: "main"),
+.package(url: "https://github.com/NSStudent/ChessOpeningsCatalog.git", from: "0.1.0"),
 ```
 
 and `.product(name: "ChessOpeningsCatalog", package: "ChessOpeningsCatalog")` in the target.
@@ -94,7 +94,7 @@ The full list, with the names each one comes from, is in [`Data/transpositions.t
 - **Origin:** [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings), files `a.tsv`…`e.tsv` (columns `eco`, `name`, `pgn`), commit `3ba6b20d31b2e6125cb0e6a2e792f400717d9d39` (5 Nov 2026). Verbatim copy in `Data/lichess/`.
 - **License:** CC0 1.0 Universal (public domain). The repository says so in its README («As a collection of facts, this data set is in the public domain») and in `COPYING.txt`, copied to `Data/lichess/COPYING.txt`. No attribution is required; it is credited anyway.
 - The Lichess repository no longer ships the `uci` and `epd` columns (its `Makefile` generates them with python-chess), so the generator replays the SAN of each line with FischerCore.
-- The code of this package is MIT (see `LICENSE`).
+- The code of this package is MIT (see `LICENSE`). The opening data in `Data/lichess/` and the derived resource `Sources/ChessOpeningsCatalog/Resources/openings.bin` are not covered by it: they come from lichess-org/chess-openings and are dedicated to the public domain under CC0 1.0 Universal (see `Data/lichess/COPYING.txt`).
 
 ### Regenerating
 
